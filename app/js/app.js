@@ -98,7 +98,7 @@
 
     var gameobjproto = GameObj.prototype;
 
-    gameobjproto.color = 'rgb(255,0,0)';
+    gameobjproto.color = 'rgb(255,255,255)';
 
     gameobjproto.render = function () {
         var pos = this.pos;
@@ -130,12 +130,35 @@
 
 
 
+    function Enemy(level, pos) {
+        GameObj.call(this, level, pos, 10);
+    }
+
+    var enemyproto = Enemy.prototype = Object.create(GameObj.prototype);
+
+    enemyproto.color = 'rgb(0,0,255)';
+
+
+    function MeleeEnemy(level, pos) {
+        Enemy.call(this, level, pos);
+    }
+
+    var meleeenemyproto = MeleeEnemy.prototype = Object.create(Enemy.prototype);
+
+    meleeenemyproto.react = function () {
+
+    };
+
+
+
     function Player(level, pos) {
         GameObj.call(this, level, pos, 10);
         this.reloadCount = 0;
     }
 
     var playerproto = Player.prototype  = Object.create(GameObj.prototype);
+
+    playerproto.color = 'rgb(255,0,0)';
 
     playerproto.react = function (actions) {
         var moveDistance = 5, bullet, bulletPos, bulletMove, normalizedMove,
@@ -163,7 +186,7 @@
 
         if (actions[FIRE] && this.reloadCount === 0) {
             normalizedMove = this.move.scalarMul(1.0 / this.move.getLength());
-            bulletPos = this.pos.add(normalizedMove.scalarMul(this.r));
+            bulletPos = this.pos.add(normalizedMove.scalarMul(this.r * 1.5));
             bulletMove = normalizedMove.scalarMul(15);
             bullet = new Bullet(this.level, bulletPos, bulletMove);
             this.level.bullets.push(bullet);
@@ -249,8 +272,11 @@
         }
         this.cells = cells;
         this.bullets = [];
+        this.enemies = [];
         this.player = new Player(this,
                                  new Vector(cellWidth * 1.5, cellWidth * 1.5));
+
+        this.enemies.push(new MeleeEnemy(this, new Vector(cellWidth * 3.5, cellWidth * 1.5)));
     }
 
     var levproto = Level.prototype;
@@ -271,6 +297,9 @@
         this.player.render();
         for (i = 0; i < this.bullets.length; i++) {
             this.bullets[i].render();
+        }
+        for (i = 0; i < this.enemies.length; i++) {
+            this.enemies[i].render();
         }
         ctx.restore();
     };
@@ -299,6 +328,9 @@
         this.checkObjCollisions(this.player);
         for (i = 0; i < this.bullets.length; i++) {
             this.checkObjCollisions(this.bullets[i]);
+        }
+        for (i = 0; i < this.enemies.length; i++) {
+            this.checkObjCollisions(this.enemies[i]);
         }
     };
 
