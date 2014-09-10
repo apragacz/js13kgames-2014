@@ -301,6 +301,11 @@
         ctx.fillRect(i * cellWidth, j * cellWidth, cellWidth, cellWidth);
     };
 
+
+    cellproto.getDFSKey = function () {
+        return this.i + 'x' + this.j;
+    };
+
     cellproto.getCenterPoint = function () {
         var w = this.level.cellWidth;
         return new Vector(w * (this.i + 0.5), w * (this.j + 0.5));
@@ -332,6 +337,10 @@
         var cellRow;
         var i, j;
 
+        if (numCellRows % 2 === 0 || numCellCols % 2 === 0) {
+            throw "Gimme odd numbers";
+        }
+
         this.cellWidth = cellWidth;
         this.numCellRows = numCellRows;
         this.numCellCols = numCellCols;
@@ -356,11 +365,132 @@
         this.bullets = [];
         this.enemies = [];
         this.player = new Player(this, cells[1][1].getCenterPoint());
-
-        this.enemies.push(new MeleeEnemy(this, cells[3][1].getCenterPoint()));
+        this.generate();
     }
 
     var levproto = Level.prototype;
+
+    levproto.generate = function () {
+        var cells = this.cells;
+        var rowH = (this.numCellRows / 2) | 0, colH = (this.numCellCols / 2) | 0;
+        var i, j, k, enemy;
+        var randint = function (n) {
+            return (Math.random() * n) | 0;
+        };
+        for (k = 0; k < rowH * colH; k++) {
+            i = randint(colH - 1) * 2 + 2;
+            j = randint(rowH - 1) * 2 + 2;
+            cells[j][i].type = CELL_WALL;
+        }
+
+        for (k = 0; k < rowH * colH * 2; k++) {
+            i = randint(colH) * 2 + 1;
+            j = randint(rowH - 1) * 2 + 2;
+            if (!(cells[j][i - 1].type === CELL_WALL && cells[j][i + 1].type === CELL_WALL)) {
+                continue;
+            }
+            cells[j][i].type = CELL_WALL;
+            if (!this.areCellsConnected()) {
+                cells[j][i].type = CELL_EMPTY;
+                continue;
+            }
+        }
+
+        for (k = 0; k < rowH * colH * 2; k++) {
+            i = randint(colH - 1) * 2 + 2;
+            j = randint(rowH) * 2 + 1;
+            if (!(cells[j - 1][i].type === CELL_WALL && cells[j + 1][i].type === CELL_WALL)) {
+                continue;
+            }
+            cells[j][i].type = CELL_WALL;
+            if (!this.areCellsConnected()) {
+                cells[j][i].type = CELL_EMPTY;
+                continue;
+            }
+        }
+
+        var numOfMeleeEnemies = 10;
+
+        for (k = 0; k < numOfMeleeEnemies; k++) {
+            i = randint(colH) * 2 + 1;
+            j = randint(rowH) * 2 + 1;
+
+            enemy = new MeleeEnemy(this, cells[j][i].getCenterPoint());
+
+            this.enemies.push(enemy);
+        }
+
+
+    };
+
+    levproto.cellDFS = function () {
+        var cells = this.cells;
+        var visited = {};
+        var distances = {};
+        var queue = [];
+        var elem;
+        var key;
+
+        var getNextCells = function (cell) {
+            var i = cell.i, j=cell.j;
+            return [
+                cells[j - 1][i],
+                cells[j][i - 1],
+                cells[j + 1][i],
+                cells[j][i + 1]
+            ].filter(function (elem) {
+                return elem && elem.type !== CELL_WALL;
+            });
+        };
+
+        var getNextElements = function (elem) {
+            return getNextCells(elem[0]).map(function(cell) {
+                return [cell, elem[1] + 1];
+            });
+        };
+
+
+        queue.push([cells[1][1], 0]);
+
+        while(queue.length > 0) {
+            elem = queue.shift();
+            key = elem[0].getDFSKey();
+            if (!visited[key]) {
+                distances[key] = elem[1];
+                visited[key] = true;
+                Array.prototype.push.apply(queue, getNextElements(elem));
+            }
+        }
+
+        return distances;
+    };
+
+    levproto.eachCell = function (cb) {
+        var i, j;
+        for (j = 0; j < this.numCellRows; j++) {
+            for (i = 0; i < this.numCellCols; i++) {
+                cb(this.cells[j][i]);
+            }
+        }
+    };
+
+    levproto.getAllCells = function () {
+        var cells = [];
+        this.eachCell(function (cell) {
+            cells.push(cell);
+        });
+        return cells;
+    };
+
+    levproto.areCellsConnected = function () {
+        var distances = this.cellDFS();
+
+        return this.getAllCells().filter(function (cell) {
+            return cell.type != CELL_WALL;
+        }).every(function (cell) {
+            return typeof distances[cell.getDFSKey()] !== 'undefined';
+        });
+    };
 
     levproto.render = function () {
         var i, j;
@@ -468,7 +598,7 @@
     bufferCanvas.width = width;
     bufferCanvas.height = height;
 
-    var level = new Level(40, 40, 50);
+    var level = new Level(33, 31, 50);
 
     function animLoop() {
         root.requestAnimationFrame(animLoop);
