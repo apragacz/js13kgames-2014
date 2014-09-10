@@ -12,7 +12,15 @@
         return new this(0, 0);
     };
 
+    Vector.getSquaredDistance = function (p1, p2) {
+        return p1.sub(p2).getSquaredLength();
+    };
+
     var vecproto = Vector.prototype;
+
+    vecproto.clone = function () {
+        return new this.constructor(this.x, this.y);
+    };
 
     vecproto._addCoords = function (x, y) {
         this.x += x;
@@ -24,6 +32,10 @@
         return this._addCoords(b.x, b.y);
     };
 
+    vecproto._sub = function (b) {
+        return this._addCoords(-b.x, -b.y);
+    };
+
     vecproto._scalarMul = function (c) {
         this.x *= c;
         this.y *= c;
@@ -33,14 +45,19 @@
     vecproto.reset = function () {
         this.x = 0;
         this.y = 0;
+        return this;
     };
 
     vecproto.add = function (b) {
-        return new this.constructor(this.x + b.x, this.y + b.y);
+        return this.clone()._add(b);
+    };
+
+    vecproto.sub = function (b) {
+        return this.clone()._sub(b);
     };
 
     vecproto.scalarMul = function (c) {
-        return new this.constructor(c * this.x, c * this.y);
+        return this.clone()._scalarMul(c);
     };
 
     vecproto.neg = function () {
@@ -94,6 +111,7 @@
         this.pos = pos;
         this.move = Vector.zero();
         this.r = r;
+        this.disposed = false;
     }
 
     var gameobjproto = GameObj.prototype;
@@ -117,24 +135,79 @@
     gameobjproto.react = function () {
     };
 
+    gameobjproto.collidesWithObj = function (obj) {
+        var rsum = obj.r + this.r;
+        var rsumSquared = rsum * rsum;
+        return Vector.getSquaredDistance(obj.pos, this.pos) < rsumSquared;
+    };
+
+    gameobjproto.attack = function (obj, attackPoints) {
+        // "mediating" the attack
+        this.level.attack(this, obj, attackPoints);
+    };
+
+    gameobjproto.decreaseHealth = function (damagePoints) {
+    };
+
+    gameobjproto._markDisposed = function () {
+        this.disposed = true;
+    };
 
 
-    function Bullet(level, pos, move) {
+
+    function Bullet(level, pos, move, sender, attackPoints) {
         GameObj.call(this, level, pos, 2);
         this.move = move;
+        this.sender = sender;
+        this.attackPoints = attackPoints;
     }
 
     var bulletproto = Bullet.prototype = Object.create(GameObj.prototype);
 
     bulletproto.color = 'rgb(255,255,0)';
 
+    bulletproto.react = function () {
+
+        var i, objects = [this.level.player].concat(this.level.enemies);
+
+        for (i = 0; i < objects.length; i++) {
+            if (this.collidesWithObj(objects[i])) {
+                this.sender.attack(objects[i], this.attackPoints);
+                this.move.reset();
+            }
+        }
+
+        if (this.move.isZero()) {
+            this._markDisposed();
+        }
+    };
+
+
+
+    function AliveObj() {
+        GameObj.apply(this, arguments);
+        this.health = 100;
+    }
+
+    var aliveobjproto = AliveObj.prototype = Object.create(GameObj.prototype);
+
+    aliveobjproto.decreaseHealth = function (damagePoints) {
+
+        if (this.health <= damagePoints) {
+            this.health = 0;
+            this._markDisposed();
+        } else {
+            this.health -= damagePoints;
+        }
+    };
+
 
 
     function Enemy(level, pos) {
-        GameObj.call(this, level, pos, 10);
+        AliveObj.call(this, level, pos, 10);
     }
 
-    var enemyproto = Enemy.prototype = Object.create(GameObj.prototype);
+    var enemyproto = Enemy.prototype = Object.create(AliveObj.prototype);
 
     enemyproto.color = 'rgb(0,0,255)';
 
@@ -146,17 +219,22 @@
     var meleeenemyproto = MeleeEnemy.prototype = Object.create(Enemy.prototype);
 
     meleeenemyproto.react = function () {
+        var player = this.level.player;
+        if (this.collidesWithObj(player)) {
+            this.attack(player, 20);
+        }
 
     };
 
 
 
     function Player(level, pos) {
-        GameObj.call(this, level, pos, 10);
+        AliveObj.call(this, level, pos, 10);
         this.reloadCount = 0;
+        this.rangedAttackPoints = 20;
     }
 
-    var playerproto = Player.prototype  = Object.create(GameObj.prototype);
+    var playerproto = Player.prototype  = Object.create(AliveObj.prototype);
 
     playerproto.color = 'rgb(255,0,0)';
 
@@ -188,10 +266,9 @@
             normalizedMove = this.move.scalarMul(1.0 / this.move.getLength());
             bulletPos = this.pos.add(normalizedMove.scalarMul(this.r * 1.5));
             bulletMove = normalizedMove.scalarMul(15);
-            bullet = new Bullet(this.level, bulletPos, bulletMove);
+            bullet = new Bullet(this.level, bulletPos, bulletMove, this, this.rangedAttackPoints);
             this.level.bullets.push(bullet);
             this.reloadCount = 10;
-            dupcia = 0;
         }
 
         if (this.reloadCount > 0) {
@@ -222,6 +299,11 @@
             ctx.fillStyle = "rgb(0,0,0)";
         }
         ctx.fillRect(i * cellWidth, j * cellWidth, cellWidth, cellWidth);
+    };
+
+    cellproto.getCenterPoint = function () {
+        var w = this.level.cellWidth;
+        return new Vector(w * (this.i + 0.5), w * (this.j + 0.5));
     };
 
     var CELL_WALL = 'wall';
@@ -273,10 +355,9 @@
         this.cells = cells;
         this.bullets = [];
         this.enemies = [];
-        this.player = new Player(this,
-                                 new Vector(cellWidth * 1.5, cellWidth * 1.5));
+        this.player = new Player(this, cells[1][1].getCenterPoint());
 
-        this.enemies.push(new MeleeEnemy(this, new Vector(cellWidth * 3.5, cellWidth * 1.5)));
+        this.enemies.push(new MeleeEnemy(this, cells[3][1].getCenterPoint()));
     }
 
     var levproto = Level.prototype;
@@ -304,6 +385,11 @@
         ctx.restore();
     };
 
+    levproto.mapObjToCell = function (obj) {
+        var i = (obj.pos.x / this.cellWidth);
+        var j = (obj.pos.y / this.cellWidth);
+    };
+
     levproto.checkObjCollisions = function (obj) {
         var i, j, cell, vec = Vector.zero(),
             nextpos = obj.pos.add(obj.move), rsq = obj.r * obj.r;
@@ -324,31 +410,52 @@
     };
 
     levproto.checkCollisions = function () {
-        var i;
-        this.checkObjCollisions(this.player);
-        for (i = 0; i < this.bullets.length; i++) {
-            this.checkObjCollisions(this.bullets[i]);
-        }
-        for (i = 0; i < this.enemies.length; i++) {
-            this.checkObjCollisions(this.enemies[i]);
+        var i, objects = [this.player].concat(this.bullets, this.enemies);
+        for (i = 0; i < objects.length; i++) {
+            this.checkObjCollisions(objects[i]);
         }
     };
 
     levproto.react = function () {
+        var i, objects = [].concat(this.bullets, this.enemies);
         this.player.react(actions);
+        for (i = 0; i < objects.length; i++) {
+            objects[i].react();
+        }
     };
 
     levproto.advance = function () {
-        var i, bullets = this.bullets;
-        this.player.advance();
-        for (i = 0; i < bullets.length; i++) {
-            bullets[i].advance();
-            if (bullets[i].move.isZero()) {
-                bullets.splice(i, 1);
+        var i, objects = [this.player].concat(this.bullets, this.enemies);
+        for (i = 0; i < objects.length; i++) {
+            objects[i].advance();
+        }
+    };
+
+    levproto.disposeObjectsInArray = function (arr) {
+        var i;
+        for (i = 0; i < arr.length; i++) {
+            if (arr[i].disposed){
+                arr.splice(i, 1);
                 --i;
             }
         }
+    };
 
+    levproto.disposeObjects = function () {
+        this.disposeObjectsInArray(this.bullets);
+        this.disposeObjectsInArray(this.enemies);
+    };
+
+    levproto.tick = function () {
+        this.react();
+        this.checkCollisions();
+        this.advance();
+        this.disposeObjects();
+    };
+
+    levproto.attack = function (attackingObj, attackedObj, attackPoints) {
+        console.log(attackingObj, ' attacked ', attackedObj, ' with ', attackPoints);
+        attackedObj.decreaseHealth(attackPoints);
     };
 
 
@@ -373,9 +480,9 @@
     }
 
     function doLoop() {
-        level.react();
-        level.checkCollisions();
-        level.advance();
+        setInterval(function () {
+            level.tick();
+        }, 16);
     }
 
     window.addEventListener('keyup', function (e) {
@@ -392,7 +499,7 @@
         }
     }, false);
 
-    setInterval(doLoop, 16);
+    doLoop();
     animLoop();
 
     root.Vector = Vector;
