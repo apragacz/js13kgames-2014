@@ -302,7 +302,7 @@
     };
 
 
-    cellproto.getDFSKey = function () {
+    cellproto.getHashKey = function () {
         return this.i + 'x' + this.j;
     };
 
@@ -423,7 +423,7 @@
 
     };
 
-    levproto.cellDFS = function () {
+    levproto.cellBFS = function (startCell) {
         var cells = this.cells;
         var visited = {};
         var distances = {};
@@ -450,11 +450,11 @@
         };
 
 
-        queue.push([cells[1][1], 0]);
+        queue.push([startCell, 0]);
 
         while(queue.length > 0) {
             elem = queue.shift();
-            key = elem[0].getDFSKey();
+            key = elem[0].getHashKey();
             if (!visited[key]) {
                 distances[key] = elem[1];
                 visited[key] = true;
@@ -483,12 +483,12 @@
     };
 
     levproto.areCellsConnected = function () {
-        var distances = this.cellDFS();
+        var distances = this.cellBFS(this.cells[1][1]);
 
         return this.getAllCells().filter(function (cell) {
             return cell.type != CELL_WALL;
         }).every(function (cell) {
-            return typeof distances[cell.getDFSKey()] !== 'undefined';
+            return typeof distances[cell.getHashKey()] !== 'undefined';
         });
     };
 
