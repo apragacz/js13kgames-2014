@@ -2,6 +2,11 @@
     "use strict";
     var root = this;
     var sqrtOf2 = Math.sqrt(2);
+    var degToRadFactor = Math.PI / 180;
+
+    var degToRad = function (degrees) {
+        return degToRadFactor * degrees;
+    };
 
     function Vector(x, y) {
         this.x = x;
@@ -14,6 +19,11 @@
 
     Vector.getSquaredDistance = function (p1, p2) {
         return p1.sub(p2).getSquaredLength();
+    };
+
+    Vector.direction = function (angleInRadians) {
+        var x = Math.cos(angleInRadians), y = Math.sin(angleInRadians);
+        return new this(x, y);
     };
 
     var vecproto = Vector.prototype;
@@ -111,6 +121,7 @@
         this.pos = pos;
         this.move = Vector.zero();
         this.r = r;
+        this.rot = 0;
         this.disposed = false;
     }
 
@@ -255,6 +266,22 @@
             move._addCoords(moveDistance, 0);
         }
 
+        var dir = Vector.direction(degToRad(this.rot + 270));
+
+        if (actions[MOVE_FORWARD]) {
+            move._add(dir.scalarMul(moveDistance));
+        }
+        if (actions[MOVE_BACKWARD]) {
+            move._sub(dir.scalarMul(moveDistance));
+        }
+        if (actions[TURN_LEFT]) {
+            this.rot -= 1;
+        }
+        if (actions[TURN_RIGHT]) {
+            this.rot += 1;
+        }
+
+
         if (move.getSquaredLength() === 2 * moveDistance * moveDistance) {
             move._scalarMul(1 / sqrtOf2);
         }
@@ -319,12 +346,22 @@
     var MOVE_LEFT = 'move-left';
     var MOVE_RIGHT = 'move-right';
     var FIRE = 'fire';
+    var MOVE_FORWARD = 'move-forward';
+    var MOVE_BACKWARD = 'move-backward';
+    var TURN_LEFT = 'turn-left';
+    var TURN_RIGHT = 'turn-right';
 
     var keyMap = {
+        /*
         37: MOVE_LEFT,
         38: MOVE_UP,
         39: MOVE_RIGHT,
         40: MOVE_DOWN,
+        */
+        37: TURN_LEFT,
+        38: MOVE_FORWARD,
+        39: TURN_RIGHT,
+        40: MOVE_BACKWARD,
         65: FIRE,
     };
 
