@@ -129,7 +129,7 @@
 
     gameobjproto.color = 'rgb(255,255,255)';
 
-    gameobjproto.render = function () {
+    gameobjproto.render = function (ctx) {
         var pos = this.pos;
         var r = this.r;
         ctx.beginPath();
@@ -317,7 +317,7 @@
 
     var cellproto = Cell.prototype;
 
-    cellproto.render = function () {
+    cellproto.render = function (ctx) {
         var cellWidth = this.level.cellWidth;
         var i = this.i, j = this.j;
         if (this.type === CELL_WALL) {
@@ -529,9 +529,8 @@
         });
     };
 
-    levproto.render = function () {
+    levproto.render = function (ctx) {
         var i, j;
-        directCtx.drawImage(bufferCanvas, 0, 0);
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, width, height);
         ctx.save();
@@ -539,15 +538,15 @@
                       height / 2 - this.player.pos.y | 0);
         for (j = 0; j < this.numCellRows; j++) {
             for (i = 0; i < this.numCellCols; i++) {
-                this.cells[j][i].render();
+                this.cells[j][i].render(ctx);
             }
         }
-        this.player.render();
+        this.player.render(ctx);
         for (i = 0; i < this.bullets.length; i++) {
-            this.bullets[i].render();
+            this.bullets[i].render(ctx);
         }
         for (i = 0; i < this.enemies.length; i++) {
-            this.enemies[i].render();
+            this.enemies[i].render(ctx);
         }
         ctx.restore();
     };
@@ -632,6 +631,7 @@
     var ctx = bufferCanvas.getContext('2d');
     var directCtx = canvas.getContext('2d');
     var width = 800, height = 600;
+
     bufferCanvas.width = width;
     bufferCanvas.height = height;
 
@@ -643,7 +643,8 @@
     }
 
     function render() {
-        level.render();
+        directCtx.drawImage(bufferCanvas, 0, 0);
+        level.render(ctx);
     }
 
     function doLoop() {
