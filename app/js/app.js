@@ -256,7 +256,7 @@
         this.move._scalarMul(0.8);
 
         if (this.collidesWithObj(player) && this.reloadCount === 0) {
-            this.attack(player, 1);
+            this.attack(player, 3);
             this.reloadCount = 10;
         }
 
