@@ -236,16 +236,20 @@
 
     function MeleeEnemy(level, pos) {
         Enemy.call(this, level, pos);
+        this.reloadCount = 0;
     }
 
     var meleeenemyproto = MeleeEnemy.prototype = Object.create(Enemy.prototype);
 
     meleeenemyproto.react = function () {
         var player = this.level.player;
-        if (this.collidesWithObj(player)) {
-            this.attack(player, 20);
+        if (this.collidesWithObj(player) && this.reloadCount === 0) {
+            this.attack(player, 1);
+            this.reloadCount = 10;
         }
-
+        if (this.reloadCount > 0) {
+            --this.reloadCount;
+        }
     };
 
 
@@ -355,6 +359,7 @@
 
     var CELL_WALL = 'wall';
     var CELL_EMPTY = 'empty';
+    var CELL_EXIT = 'exit';
 
     var MOVE_UP = 'move-up';
     var MOVE_DOWN = 'move-down';
@@ -400,7 +405,7 @@
 
 
 
-    function Level(numCellRows, numCellCols, cellWidth) {
+    function Level(numCellRows, numCellCols, cellWidth, onLevelExit, onGameOver) {
         var cells = [];
         var cellRow;
         var i, j;
@@ -432,6 +437,8 @@
         this.cells = cells;
         this.bullets = [];
         this.enemies = [];
+        this.onLevelExit = onLevelExit;
+        this.onGameOver = onGameOver;
         this.player = new Player(this, cells[1][1].getCenterPoint());
         this.generate();
     }
@@ -486,11 +493,29 @@
             }
         }
 
+        var startCell = cells[1][1];
+        var distances = this.cellBFS(startCell);
+        var maxDistance = 0;
+        var maxDistanceCell = startCell;
+
+        this.eachCell(function (cell) {
+            if (distances[cell.getHashKey()] > maxDistance) {
+                maxDistance = distances[cell.getHashKey()];
+                maxDistanceCell = cell;
+            }
+        });
+
+        maxDistanceCell.type = CELL_EXIT;
+
         var numOfMeleeEnemies = 30;
 
         for (k = 0; k < numOfMeleeEnemies; k++) {
             i = randint(colH) * 2 + 1;
             j = randint(rowH) * 2 + 1;
+
+            if (i === 1 && j === 1) {
+                continue;
+            }
 
             enemy = new MeleeEnemy(this, cells[j][i].getCenterPoint());
 
@@ -498,6 +523,15 @@
         }
 
 
+    };
+
+    levproto.remove = function () {
+        // to prevent memory leaks
+        delete this.player;
+        delete this.bullets;
+        delete this.cells;
+        delete this.onLevelExit;
+        delete this.onGameOver;
     };
 
     levproto.cellBFS = function (startCell) {
@@ -608,12 +642,18 @@
         for (j = 0; j < this.numCellRows; j++) {
             for (i = 0; i < this.numCellCols; i++) {
                 cell = this.cells[j][i];
-                if (cell.type !== CELL_WALL) {
+                if (cell.type !== CELL_WALL && cell.type !== CELL_EXIT) {
                     continue;
                 }
                 cell.rect._loadCollisionVector(vec, nextpos);
                 sqLen = vec.getSquaredLength();
                 if (sqLen <= rsq) {
+
+                    if (cell.type === CELL_EXIT && obj === this.player) {
+                        this.levelExitHappened = true;
+                        return;
+                    }
+
                     if (obj.wallCollisionSlide) {
                         console.log('vec, sqlen', vec.toString(), sqLen);
                         if (vec.x === 0 && vec.y === 0) {
@@ -682,6 +722,16 @@
         this.checkCollisions();
         this.advance();
         this.disposeObjects();
+
+        if (this.player.health <= 0) {
+            this.onGameOver(this);
+            return;
+        }
+
+        if (this.levelExitHappened) {
+            this.onLevelExit(this);
+            return;
+        }
     };
 
     levproto.attack = function (attackingObj, attackedObj, attackPoints) {
@@ -700,24 +750,49 @@
     bufferCanvas.width = width;
     bufferCanvas.height = height;
 
-    var cellImages = {}, wallImage;
+    var cellImages = {}, wallImage, exitImage;
     wallImage = new Image();
     wallImage.src = 'img/wall.gif';
+    exitImage = new Image();
+    exitImage.src = 'img/exit.gif';
     cellImages[CELL_WALL] = wallImage;
+    cellImages[CELL_EXIT] = exitImage;
 
-    var level = new Level(33, 31, 40);
+    var level = null;
+    var levelNum = 1;
 
-    function animLoop() {
-        root.requestAnimationFrame(animLoop);
+    function generateNewLevel () {
+        var onLevelExit = function (sourceLevel) {
+            levelNum++;
+            generateNewLevel();
+            level.player.health = sourceLevel.player.health;
+            sourceLevel.remove();
+        };
+        var onGameOver = function (sourceLevel) {
+            levelNum = 1;
+            generateNewLevel();
+            sourceLevel.remove();
+        };
+        level = new Level(33, 31, 40, onLevelExit, onGameOver);
+    }
+
+    var animFrameRequest, doInterval;
+
+    function asyncAnimLoop() {
+        root.requestAnimationFrame(asyncAnimLoop);
         render();
     }
 
     function render() {
         directCtx.drawImage(bufferCanvas, 0, 0);
         level.render(ctx);
+        ctx.fillStyle = 'red';
+        ctx.font = '20px Arial';
+        ctx.fillText("HP " + level.player.health, 30, 30);
+        ctx.fillText("Level " + levelNum, 700, 30);
     }
 
-    function doLoop() {
+    function asyncDoLoop() {
         setInterval(function () {
             level.tick();
         }, 16);
@@ -763,8 +838,10 @@
         mouseDown = false;
     }, false);
 
-    doLoop();
-    animLoop();
+    generateNewLevel();
+
+    asyncDoLoop();
+    asyncAnimLoop();
 
     root.Vector = Vector;
 
