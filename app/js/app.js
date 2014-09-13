@@ -52,6 +52,10 @@
         return this;
     };
 
+    vecproto._normalize = function () {
+        return this._scalarMul(1.0 / this.getLength());
+    };
+
     vecproto.reset = function () {
         this.x = 0;
         this.y = 0;
@@ -74,8 +78,12 @@
         return new this.constructor(-this.x, -this.y);
     };
 
+    vecproto.dot = function (b) {
+        return this.x * b.x + this.y * b.y;
+    };
+
     vecproto.getSquaredLength = function () {
-        return this.x * this.x + this.y * this.y;
+        return this.dot(this);
     };
 
     vecproto.getLength = function () {
@@ -128,6 +136,8 @@
     var gameobjproto = GameObj.prototype;
 
     gameobjproto.color = 'rgb(255,255,255)';
+
+    gameobjproto.wallCollisionSlide = false;
 
     gameobjproto.render = function (ctx) {
         var pos = this.pos;
@@ -194,13 +204,14 @@
     };
 
 
-
     function AliveObj() {
         GameObj.apply(this, arguments);
         this.health = 100;
     }
 
     var aliveobjproto = AliveObj.prototype = Object.create(GameObj.prototype);
+
+    aliveobjproto.wallCollisionSlide = true;
 
     aliveobjproto.decreaseHealth = function (damagePoints) {
 
@@ -249,8 +260,8 @@
 
     playerproto.color = 'rgb(255,0,0)';
 
-    playerproto.react = function (actions) {
-        var moveDistance = 5, bullet, bulletPos, bulletMove, normalizedMove,
+    playerproto.react = function (actions, mouseHoldPos) {
+        var moveDistance = 4, bullet, bulletPos, bulletMove, bulletNormalizedMove,
             move = Vector.zero();
 
         if (actions[MOVE_UP]) {
@@ -275,10 +286,10 @@
             move._sub(dir.scalarMul(moveDistance));
         }
         if (actions[TURN_LEFT]) {
-            this.rot -= 1;
+            this.rot -= 5;
         }
         if (actions[TURN_RIGHT]) {
-            this.rot += 1;
+            this.rot += 5;
         }
 
 
@@ -286,13 +297,17 @@
             move._scalarMul(1 / sqrtOf2);
         }
 
-        this.move._scalarMul(0.6);
+        this.move._scalarMul(0.5);
         this.move._add(move);
 
-        if (actions[FIRE] && this.reloadCount === 0) {
-            normalizedMove = this.move.scalarMul(1.0 / this.move.getLength());
-            bulletPos = this.pos.add(normalizedMove.scalarMul(this.r * 1.5));
-            bulletMove = normalizedMove.scalarMul(15);
+        if ((actions[FIRE] || mouseHoldPos) && this.reloadCount === 0) {
+            if (mouseHoldPos) {
+                bulletNormalizedMove = mouseHoldPos.clone()._addCoords(-width / 2, -height / 2)._normalize();
+            } else{
+                bulletNormalizedMove = this.move.clone()._normalize();
+            }
+            bulletPos = this.pos.add(bulletNormalizedMove.scalarMul(this.r * 1.5));
+            bulletMove = bulletNormalizedMove.scalarMul(15);
             bullet = new Bullet(this.level, bulletPos, bulletMove, this, this.rangedAttackPoints);
             this.level.bullets.push(bullet);
             this.reloadCount = 10;
@@ -320,12 +335,12 @@
     cellproto.render = function (ctx) {
         var cellWidth = this.level.cellWidth;
         var i = this.i, j = this.j;
-        if (this.type === CELL_WALL) {
-            ctx.fillStyle = "rgb(127,127,127)";
+        if (cellImages[this.type]) {
+            ctx.drawImage(cellImages[this.type], i * cellWidth, j * cellWidth);
         } else {
             ctx.fillStyle = "rgb(0,0,0)";
+            ctx.fillRect(i * cellWidth, j * cellWidth, cellWidth, cellWidth);
         }
-        ctx.fillRect(i * cellWidth, j * cellWidth, cellWidth, cellWidth);
     };
 
 
@@ -351,21 +366,37 @@
     var TURN_LEFT = 'turn-left';
     var TURN_RIGHT = 'turn-right';
 
-    var keyMap = {
-        /*
-        37: MOVE_LEFT,
-        38: MOVE_UP,
-        39: MOVE_RIGHT,
-        40: MOVE_DOWN,
-        */
-        37: TURN_LEFT,
-        38: MOVE_FORWARD,
-        39: TURN_RIGHT,
-        40: MOVE_BACKWARD,
-        65: FIRE,
-    };
+    var controlType = 1;
 
-    var actions = {};
+    var keyMap;
+
+    if (controlType === 2) {
+        keyMap = {
+            37: TURN_LEFT,
+            38: MOVE_FORWARD,
+            39: TURN_RIGHT,
+            40: MOVE_BACKWARD,
+            65: FIRE,
+        };
+    } else {
+        keyMap = {
+            37: MOVE_LEFT,
+            38: MOVE_UP,
+            39: MOVE_RIGHT,
+            40: MOVE_DOWN,
+
+            87: MOVE_UP,
+            83: MOVE_DOWN,
+            65: MOVE_LEFT,
+            68: MOVE_RIGHT,
+
+            //17: FIRE,
+            13: FIRE,
+        };
+    }
+
+    var actions = {}, mouseHoldPos = null, mousePos = Vector.zero(), mouseDown = false,
+        mouseIn = false;
 
 
 
@@ -410,11 +441,20 @@
     levproto.generate = function () {
         var cells = this.cells;
         var rowH = (this.numCellRows / 2) | 0, colH = (this.numCellCols / 2) | 0;
+        var rowQ = (rowH / 2) | 0, colQ = (colH / 2) | 0;
         var i, j, k, enemy;
         var randint = function (n) {
             return (Math.random() * n) | 0;
         };
-        for (k = 0; k < rowH * colH; k++) {
+
+        for (k = 0; k < rowQ * colQ; k++) {
+            i = randint(colQ - 1) * 4 + 4;
+            j = randint(rowQ - 1) * 4 + 4;
+            cells[j][i].type = CELL_WALL;
+        }
+
+
+        for (k = 0; k < rowH * colH * 0.5; k++) {
             i = randint(colH - 1) * 2 + 2;
             j = randint(rowH - 1) * 2 + 2;
             cells[j][i].type = CELL_WALL;
@@ -446,7 +486,7 @@
             }
         }
 
-        var numOfMeleeEnemies = 10;
+        var numOfMeleeEnemies = 30;
 
         for (k = 0; k < numOfMeleeEnemies; k++) {
             i = randint(colH) * 2 + 1;
@@ -534,8 +574,11 @@
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, width, height);
         ctx.save();
-        ctx.translate(width / 2 - this.player.pos.x | 0,
-                      height / 2 - this.player.pos.y | 0);
+        ctx.translate(width / 2, height / 2);
+        ctx.rotate(degToRad(-this.player.rot));
+        ctx.translate(-this.player.pos.x | 0, -this.player.pos.y | 0);
+        //ctx.translate(width / 2 - this.player.pos.x | 0,
+        //             height / 2 - this.player.pos.y | 0);
         for (j = 0; j < this.numCellRows; j++) {
             for (i = 0; i < this.numCellCols; i++) {
                 this.cells[j][i].render(ctx);
@@ -558,7 +601,10 @@
 
     levproto.checkObjCollisions = function (obj) {
         var i, j, cell, vec = Vector.zero(),
-            nextpos = obj.pos.add(obj.move), rsq = obj.r * obj.r;
+            nextpos, sqLen, rsq = obj.r * obj.r;
+
+        nextpos = obj.pos.add(obj.move);
+
         for (j = 0; j < this.numCellRows; j++) {
             for (i = 0; i < this.numCellCols; i++) {
                 cell = this.cells[j][i];
@@ -566,9 +612,27 @@
                     continue;
                 }
                 cell.rect._loadCollisionVector(vec, nextpos);
-                if (vec.getSquaredLength() <= rsq) {
-                    obj.move.reset();
-                    return;
+                sqLen = vec.getSquaredLength();
+                if (sqLen <= rsq) {
+                    if (obj.wallCollisionSlide) {
+                        console.log('vec, sqlen', vec.toString(), sqLen);
+                        if (vec.x === 0 && vec.y === 0) {
+                            debugger
+                        }
+                        if (sqLen > 0) {
+                            vec._scalarMul(obj.move.dot(vec) / sqLen);
+                            console.log('vec2', vec.toString());
+                            obj.move._sub(vec);
+                            nextpos = obj.pos.add(obj.move);
+                            continue;
+                        } else {
+                            obj.move.reset();
+                            return;
+                        }
+                    } else {
+                        obj.move.reset();
+                        return;
+                    }
                 }
             }
         }
@@ -584,7 +648,8 @@
 
     levproto.react = function () {
         var i, objects = [].concat(this.bullets, this.enemies);
-        this.player.react(actions);
+        mouseHoldPos = (mouseIn && mouseDown )? mousePos : null;
+        this.player.react(actions, mouseHoldPos);
         for (i = 0; i < objects.length; i++) {
             objects[i].react();
         }
@@ -620,7 +685,7 @@
     };
 
     levproto.attack = function (attackingObj, attackedObj, attackPoints) {
-        console.log(attackingObj, ' attacked ', attackedObj, ' with ', attackPoints);
+        // console.log(attackingObj, ' attacked ', attackedObj, ' with ', attackPoints);
         attackedObj.decreaseHealth(attackPoints);
     };
 
@@ -635,7 +700,12 @@
     bufferCanvas.width = width;
     bufferCanvas.height = height;
 
-    var level = new Level(33, 31, 50);
+    var cellImages = {}, wallImage;
+    wallImage = new Image();
+    wallImage.src = 'img/wall.gif';
+    cellImages[CELL_WALL] = wallImage;
+
+    var level = new Level(33, 31, 40);
 
     function animLoop() {
         root.requestAnimationFrame(animLoop);
@@ -665,6 +735,32 @@
         if (keyMap[keyCode]) {
             actions[keyMap[keyCode]] = true;
         }
+    }, false);
+
+    var canvasContainerEl = document.getElementById('canvas-container');
+
+    canvasContainerEl.addEventListener('mousedown', function (e) {
+        mousePos.x = e.clientX - canvasContainerEl.offsetLeft;
+        mousePos.y = e.clientY - canvasContainerEl.offsetTop;
+        mouseDown = true;
+    }, false);
+
+    canvasContainerEl.addEventListener('mousemove', function (e) {
+        mousePos.x = e.clientX - canvasContainerEl.offsetLeft;
+        mousePos.y = e.clientY - canvasContainerEl.offsetTop;
+    }, false);
+
+    canvasContainerEl.addEventListener('mouseup', function (e) {
+        mouseDown = false;
+    }, false);
+
+    canvasContainerEl.addEventListener('mouseenter', function (e) {
+        mouseIn = true;
+    }, false);
+
+    canvasContainerEl.addEventListener('mouseleave', function (e) {
+        mouseIn = false;
+        mouseDown = false;
     }, false);
 
     doLoop();
