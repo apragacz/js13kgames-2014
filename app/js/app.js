@@ -237,18 +237,63 @@
     function MeleeEnemy(level, pos) {
         Enemy.call(this, level, pos);
         this.reloadCount = 0;
+        this.following = false;
     }
 
     var meleeenemyproto = MeleeEnemy.prototype = Object.create(Enemy.prototype);
 
     meleeenemyproto.react = function () {
         var player = this.level.player;
+        var level = this.level;
+        var playerCell = level.mapObjToCell(player);
+        var myCell = level.mapObjToCell(this);
+        var distances, adjCells, i, bestCell, bestDistance, cell;
+        var di = Math.abs(myCell.i - playerCell.i), dj = Math.abs(myCell.j - playerCell.j);
+        var movedi, movedj;
+        var moveDistance = 0.5;
+
+        this.move._scalarMul(0.8);
+
         if (this.collidesWithObj(player) && this.reloadCount === 0) {
             this.attack(player, 1);
             this.reloadCount = 10;
         }
         if (this.reloadCount > 0) {
             --this.reloadCount;
+        }
+
+        if (!this.following) {
+            if (di < 5 && dj < 5) {
+                this.following = true;
+            }
+        } else {
+            if (di > 10 || dj > 10) {
+                this.following = false;
+            }
+        }
+
+        if (di === 0 && dj === 0) {
+            this.move._add(player.pos.sub(this.pos)._normalize()._scalarMul(moveDistance));
+        } else if (this.following) {
+            distances = level.cellBFS(playerCell, myCell);
+            adjCells = myCell.getAdjacentCells().filter(function (cell) {
+                return typeof distances[cell.getHashKey()] !== 'undefined';
+            });
+
+            bestCell = myCell;
+            bestDistance = distances[bestCell.getHashKey()];
+            for (i = 0; i < adjCells.length; ++i) {
+                cell = adjCells[i];
+                if (distances[cell.getHashKey()] < bestDistance) {
+                    bestCell = cell;
+                    bestDistance = distances[cell.getHashKey()];
+                }
+            }
+
+            movedi = bestCell.i - myCell.i;
+            movedj = bestCell.j - myCell.j;
+
+            this.move._addCoords(movedi * moveDistance, movedj * moveDistance);
         }
     };
 
@@ -355,6 +400,16 @@
     cellproto.getCenterPoint = function () {
         var w = this.level.cellWidth;
         return new Vector(w * (this.i + 0.5), w * (this.j + 0.5));
+    };
+
+    cellproto.getAdjacentCells = function () {
+        var i = this.i, j = this.j, cells = this.level.cells;
+        return [
+            cells[j - 1][i],
+            cells[j][i - 1],
+            cells[j + 1][i],
+            cells[j][i + 1]
+        ];
     };
 
     var CELL_WALL = 'wall';
@@ -534,7 +589,7 @@
         delete this.onGameOver;
     };
 
-    levproto.cellBFS = function (startCell) {
+    levproto.cellBFS = function (startCell, stopCell) {
         var cells = this.cells;
         var visited = {};
         var distances = {};
@@ -543,13 +598,7 @@
         var key;
 
         var getNextCells = function (cell) {
-            var i = cell.i, j=cell.j;
-            return [
-                cells[j - 1][i],
-                cells[j][i - 1],
-                cells[j + 1][i],
-                cells[j][i + 1]
-            ].filter(function (elem) {
+            return cell.getAdjacentCells().filter(function (elem) {
                 return elem && elem.type !== CELL_WALL;
             });
         };
@@ -569,6 +618,9 @@
             if (!visited[key]) {
                 distances[key] = elem[1];
                 visited[key] = true;
+                if (elem[1] === stopCell) {
+                    break;
+                }
                 Array.prototype.push.apply(queue, getNextElements(elem));
             }
         }
@@ -629,8 +681,9 @@
     };
 
     levproto.mapObjToCell = function (obj) {
-        var i = (obj.pos.x / this.cellWidth);
-        var j = (obj.pos.y / this.cellWidth);
+        var i = (obj.pos.x / this.cellWidth) | 0;
+        var j = (obj.pos.y / this.cellWidth) | 0;
+        return this.cells[j][i];
     };
 
     levproto.checkObjCollisions = function (obj) {
