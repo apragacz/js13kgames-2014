@@ -722,13 +722,13 @@
                     }
 
                     if (obj.wallCollisionSlide) {
-                        console.log('vec, sqlen', vec.toString(), sqLen);
-                        if (vec.x === 0 && vec.y === 0) {
-                            debugger
-                        }
+                        //console.log('vec, sqlen', vec.toString(), sqLen);
+                        //if (vec.x === 0 && vec.y === 0) {
+                        //    debugger
+                        //}
                         if (sqLen > 0) {
                             vec._scalarMul(obj.move.dot(vec) / sqLen);
-                            console.log('vec2', vec.toString());
+                            //console.log('vec2', vec.toString());
                             obj.move._sub(vec);
                             nextpos = obj.pos.add(obj.move);
                             continue;
