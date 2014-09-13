@@ -238,6 +238,7 @@
         Enemy.call(this, level, pos);
         this.reloadCount = 0;
         this.following = false;
+        this.bfsReloadCount = 0;
     }
 
     var meleeenemyproto = MeleeEnemy.prototype = Object.create(Enemy.prototype);
@@ -258,9 +259,6 @@
             this.attack(player, 1);
             this.reloadCount = 10;
         }
-        if (this.reloadCount > 0) {
-            --this.reloadCount;
-        }
 
         if (!this.following) {
             if (di < 5 && dj < 5) {
@@ -272,9 +270,16 @@
             }
         }
 
-        if (di === 0 && dj === 0) {
+        if (di <= 1 && dj <= 1) {
             this.move._add(player.pos.sub(this.pos)._normalize()._scalarMul(moveDistance));
         } else if (this.following) {
+            if (this.bfsReloadCount === 0) {
+                //TODO: collective BFS from the player
+                distances = this._bfsdistances = level.cellBFS(playerCell, myCell);
+                this.bfsReloadCount = 10000 + (Math.random() * 10) | 0;
+            } else {
+                distances = this._bfsdistances;
+            }
             distances = level.cellBFS(playerCell, myCell);
             adjCells = myCell.getAdjacentCells().filter(function (cell) {
                 return typeof distances[cell.getHashKey()] !== 'undefined';
@@ -295,6 +300,15 @@
 
             this.move._addCoords(movedi * moveDistance, movedj * moveDistance);
         }
+
+        if (this.reloadCount > 0) {
+            --this.reloadCount;
+        }
+
+        if (this.bfsReloadCount > 0) {
+            --this.bfsReloadCount;
+        }
+
     };
 
 
